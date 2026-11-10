@@ -1,6 +1,6 @@
 ⚡ JEE RANK 1 — Planner & Spaced Repetition Tracker
 
-JEE RANK 1 is an offline-first web application designed specifically for JEE Main & Advanced aspirants (Class 11/12 Physics, Chemistry, and Mathematics). It helps aspirants plan their daily study schedules, log mistake categories from test papers or coaching modules, and systematically review conceptual weak spots using a 3-day spaced repetition cycle.
+JEE RANK 1 is an offline-first web application designed specifically for JEE Main & Advanced aspirants (Class 11/12 Physics, Chemistry, and Mathematics). It helps aspirants plan their daily study schedules, log mistake categories from test papers or coaching modules, and systematically review conceptual weak spots using a 3-day spaced repetition cycle. 
 
 🌟 Key Features
 
