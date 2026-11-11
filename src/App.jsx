@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Calendar, Clock, CheckCircle2, AlertTriangle, BookOpen, Brain, 
   Plus, Search, Filter, Trash2, RefreshCw, ChevronRight, Award, 
@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
+import { supabase } from './supabase';
 
 // Safe LocalStorage Reader Helper
 const loadStorageJSON = (key, fallback) => {
@@ -138,17 +139,155 @@ export default function App() {
   const [editingMistake, setEditingMistake] = useState(null);
 
   // Sync to localStorage
+  
+  // Cloud synchronization with Supabase
+  const [cloudReady, setCloudReady] = useState(false);
+  const initialDataRef = useRef({ tasks, tests, mistakes });
+
+  // Load cloud data and migrate existing local data on first login.
   useEffect(() => {
+    let cancelled = false;
+
+    const initializeCloud = async () => {
+      try {
+        const { data: { user }, error: authError } =
+          await supabase.auth.getUser();
+
+        if (authError) throw authError;
+        if (!user) throw new Error('No authenticated user found.');
+
+        const collections = [
+          { table: 'jee_tasks', key: 'jee_tasks', fallback: initialDataRef.current.tasks },
+          { table: 'jee_tests', key: 'jee_tests', fallback: initialDataRef.current.tests },
+          { table: 'jee_mistakes', key: 'jee_mistakes', fallback: initialDataRef.current.mistakes }
+        ];
+
+        const loaded = {};
+
+        for (const item of collections) {
+          const { data: cloudRecord, error } = await supabase
+            .from(item.table)
+            .select('data')
+            .eq('user_id', user.id)
+            .eq('record_id', '__all__')
+            .maybeSingle();
+
+          if (error) throw error;
+
+          if (cloudRecord && Array.isArray(cloudRecord.data)) {
+            loaded[item.key] = cloudRecord.data;
+          } else {
+            // No cloud record: preserve and migrate existing browser data.
+            let localData = item.fallback;
+
+            try {
+              const stored = localStorage.getItem(item.key);
+              if (stored !== null) {
+                const parsed = JSON.parse(stored);
+                if (Array.isArray(parsed)) localData = parsed;
+              }
+            } catch (parseError) {
+              console.error('Local data migration error:', parseError);
+            }
+
+            loaded[item.key] = localData;
+
+            const { error: migrationError } = await supabase
+              .from(item.table)
+              .upsert({
+                user_id: user.id,
+                record_id: '__all__',
+                data: localData
+              }, { onConflict: 'user_id,record_id' });
+
+            if (migrationError) throw migrationError;
+          }
+        }
+
+        if (cancelled) return;
+
+        setTasks(loaded.jee_tasks);
+        setTests(loaded.jee_tests);
+        setMistakes(loaded.jee_mistakes);
+
+        setCloudReady(true);
+        console.log('JEE RANK 1 cloud data loaded successfully.');
+      } catch (error) {
+        console.error('Cloud initialization failed:', error);
+      }
+    };
+
+    initializeCloud();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Save changes to browser storage and Supabase.
+  useEffect(() => {
+    if (!cloudReady) return;
+
     localStorage.setItem('jee_tasks', JSON.stringify(tasks));
-  }, [tasks]);
+
+    const saveTasks = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { error } = await supabase.from('jee_tasks').upsert({
+        user_id: user.id,
+        record_id: '__all__',
+        data: tasks
+      }, { onConflict: 'user_id,record_id' });
+
+      if (error) console.error('Task cloud save failed:', error);
+    };
+
+    saveTasks();
+  }, [tasks, cloudReady]);
 
   useEffect(() => {
+    if (!cloudReady) return;
+
     localStorage.setItem('jee_tests', JSON.stringify(tests));
-  }, [tests]);
+
+    const saveTests = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { error } = await supabase.from('jee_tests').upsert({
+        user_id: user.id,
+        record_id: '__all__',
+        data: tests
+      }, { onConflict: 'user_id,record_id' });
+
+      if (error) console.error('Test cloud save failed:', error);
+    };
+
+    saveTests();
+  }, [tests, cloudReady]);
 
   useEffect(() => {
+    if (!cloudReady) return;
+
     localStorage.setItem('jee_mistakes', JSON.stringify(mistakes));
-  }, [mistakes]);
+
+    const saveMistakes = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { error } = await supabase.from('jee_mistakes').upsert({
+        user_id: user.id,
+        record_id: '__all__',
+        data: mistakes
+      }, { onConflict: 'user_id,record_id' });
+
+      if (error) console.error('Mistake cloud save failed:', error);
+    };
+
+    saveMistakes();
+  }, [mistakes, cloudReady]);
+
 
   // Today Date string YYYY-MM-DD
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
