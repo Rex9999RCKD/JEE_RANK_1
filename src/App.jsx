@@ -142,6 +142,12 @@ export default function App() {
   
   // Cloud synchronization with Supabase
   const [cloudReady, setCloudReady] = useState(false);
+
+  const remoteSyncRef = useRef({
+  tasks: null,
+  tests: null,
+  mistakes: null
+});
   const initialDataRef = useRef({ tasks, tests, mistakes });
 
   // Load cloud data and migrate existing local data on first login.
@@ -224,9 +230,79 @@ export default function App() {
     };
   }, []);
 
+// Listen for changes made on other devices.
+useEffect(() => {
+  if (!cloudReady) return;
+
+  let channel;
+
+  const setupRealtime = async () => {
+    const { data: { user }, error } = await supabase.auth.getUser();
+
+    if (error || !user) return;
+
+    channel = supabase
+      .channel(`jee-live-sync-${user.id}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'jee_tasks',
+        filter: `user_id=eq.${user.id}`
+      }, (payload) => {
+        const data = payload.new.data;
+        if (Array.isArray(data)) {
+          remoteSyncRef.current.tasks = data;
+          setTasks(data);
+          localStorage.setItem('jee_tasks', JSON.stringify(data));
+        }
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'jee_tests',
+        filter: `user_id=eq.${user.id}`
+      }, (payload) => {
+        const data = payload.new.data;
+        if (Array.isArray(data)) {
+          remoteSyncRef.current.tests = data;
+          setTests(data);
+          localStorage.setItem('jee_tests', JSON.stringify(data));
+        }
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'jee_mistakes',
+        filter: `user_id=eq.${user.id}`
+      }, (payload) => {
+        const data = payload.new.data;
+        if (Array.isArray(data)) {
+          remoteSyncRef.current.mistakes = data;
+          setMistakes(data);
+          localStorage.setItem('jee_mistakes', JSON.stringify(data));
+        }
+      })
+      .subscribe();
+  };
+
+  setupRealtime();
+
+  return () => {
+    if (channel) supabase.removeChannel(channel);
+  };
+}, [cloudReady]);
   // Save changes to browser storage and Supabase.
   useEffect(() => {
     if (!cloudReady) return;
+
+
+    const isRemoteUpdate =
+  remoteSyncRef.current.tasks !== null &&
+  JSON.stringify(tasks) === JSON.stringify(remoteSyncRef.current.tasks);
+
+remoteSyncRef.current.tasks = null;
+
+if (isRemoteUpdate) return;
 
     localStorage.setItem('jee_tasks', JSON.stringify(tasks));
 
@@ -249,6 +325,15 @@ export default function App() {
   useEffect(() => {
     if (!cloudReady) return;
 
+
+    const isRemoteUpdate =
+  remoteSyncRef.current.tests !== null &&
+  JSON.stringify(tests) === JSON.stringify(remoteSyncRef.current.tests);
+
+remoteSyncRef.current.tests = null;
+
+if (isRemoteUpdate) return;
+
     localStorage.setItem('jee_tests', JSON.stringify(tests));
 
     const saveTests = async () => {
@@ -269,7 +354,13 @@ export default function App() {
 
   useEffect(() => {
     if (!cloudReady) return;
+const isRemoteUpdate =
+  remoteSyncRef.current.mistakes !== null &&
+  JSON.stringify(mistakes) === JSON.stringify(remoteSyncRef.current.mistakes);
 
+remoteSyncRef.current.mistakes = null;
+
+if (isRemoteUpdate) return;
     localStorage.setItem('jee_mistakes', JSON.stringify(mistakes));
 
     const saveMistakes = async () => {
