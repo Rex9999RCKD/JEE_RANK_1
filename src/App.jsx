@@ -6,6 +6,7 @@ import {
   ShieldAlert, Check, X, Bell, Zap, Flame, RotateCcw, Edit, Moon, Sun
 } from 'lucide-react';
 import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 
 // Safe LocalStorage Reader Helper
 const loadStorageJSON = (key, fallback) => {
@@ -341,6 +342,7 @@ export default function App() {
     {showMistakeModal && <AddMistakeModal mode={mistakeModalMode} editingMistake={editingMistake} onClose={() => { setShowMistakeModal(false); setEditingMistake(null); }} onSubmit={handleAddOrEditMistake} />}
     {showTaskModal && <AddTaskModal initialTask={editingTask} onClose={() => { setShowTaskModal(false); setEditingTask(null); }} onSubmit={handleSaveTask} />}
     <Analytics />
+    <SpeedInsights />
   </div>
   );
 }
