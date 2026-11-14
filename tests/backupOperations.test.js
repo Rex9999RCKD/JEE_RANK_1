@@ -73,3 +73,31 @@ test('downloads a JSON file and revokes its object URL after the click', () => {
   timeoutCallback();
   assert.equal(events.at(-1), 'revoke:blob:test');
 });
+
+test('serializes cloud writes and waits for an earlier write before the next', async () => {
+  const queueRef = { current: Promise.resolve() };
+  const events = [];
+  let releaseFirst;
+  const first = enqueueSerializedWrite(queueRef, async () => {
+    events.push('first-start');
+    await new Promise(resolve => { releaseFirst = resolve; });
+    events.push('first-end');
+  });
+  const second = enqueueSerializedWrite(queueRef, async () => {
+    events.push('second-start');
+  });
+  await Promise.resolve();
+  assert.deepEqual(events, ['first-start']);
+  releaseFirst();
+  await Promise.all([first, second]);
+  assert.deepEqual(events, ['first-start', 'first-end', 'second-start']);
+});
+
+test('a failed queued write is visible to the restore barrier and does not block later queued writes', async () => {
+  const queueRef = { current: Promise.resolve() };
+  const failure = new Error('cloud save failed');
+  const first = enqueueSerializedWrite(queueRef, async () => { throw failure; });
+  const second = enqueueSerializedWrite(queueRef, async () => 'later write completed');
+  await assert.rejects(first, /cloud save failed/);
+  assert.equal(await second, 'later write completed');
+});
