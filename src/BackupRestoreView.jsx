@@ -103,7 +103,6 @@ export default function BackupRestoreView({ tasks, tests, mistakes, setTasks, se
       };
       downloadJson(safetyBackup, 'jee-rank-1-pre-restore-safety');
 
-      const saved = [];
       for (const item of COLLECTIONS) {
         const { error } = await supabase.from(item.table).upsert({
           user_id: user.id,
@@ -113,7 +112,6 @@ export default function BackupRestoreView({ tasks, tests, mistakes, setTasks, se
         if (error) {
           throw new Error(`Restore stopped while saving ${item.label}. Earlier collections may already have been restored. Your pre-restore safety backup was downloaded.`);
         }
-        saved.push(item.key);
       }
 
       setTasks(selectedBackup.data.tasks);
