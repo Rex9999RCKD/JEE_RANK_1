@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import BackupRestoreView from './BackupRestoreView';
+import { enqueueSerializedWrite } from './backupOperations';
 import { 
   Calendar, Clock, CheckCircle2, AlertTriangle, BookOpen, Brain, 
   Plus, Search, Filter, Trash2, RefreshCw, ChevronRight, Award, 
@@ -45,7 +47,7 @@ const formatTimeSlot = (slot) => {
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'alerts', 'longterm', 'mistakes', 'schedule', 'history'
+  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'alerts', 'longterm', 'mistakes', 'schedule', 'history', 'backup'
   
   // Tasks state with explicit dates, times, priority, type and deadlines
   const [tasks, setTasks] = useState(() => loadStorageJSON('jee_tasks', [
@@ -149,6 +151,8 @@ export default function App() {
   mistakes: null
 });
   const initialDataRef = useRef({ tasks, tests, mistakes });
+  const restoreInProgressRef = useRef(false);
+  const cloudWriteQueueRef = useRef(Promise.resolve());
 
   // Load cloud data and migrate existing local data on first login.
   useEffect(() => {
@@ -250,6 +254,7 @@ useEffect(() => {
         filter: `user_id=eq.${user.id}`
       }, (payload) => {
         const data = payload.new.data;
+        if (restoreInProgressRef.current) return;
         if (Array.isArray(data)) {
           remoteSyncRef.current.tasks = data;
           setTasks(data);
@@ -263,6 +268,7 @@ useEffect(() => {
         filter: `user_id=eq.${user.id}`
       }, (payload) => {
         const data = payload.new.data;
+        if (restoreInProgressRef.current) return;
         if (Array.isArray(data)) {
           remoteSyncRef.current.tests = data;
           setTests(data);
@@ -276,6 +282,7 @@ useEffect(() => {
         filter: `user_id=eq.${user.id}`
       }, (payload) => {
         const data = payload.new.data;
+        if (restoreInProgressRef.current) return;
         if (Array.isArray(data)) {
           remoteSyncRef.current.mistakes = data;
           setMistakes(data);
@@ -293,7 +300,7 @@ useEffect(() => {
 }, [cloudReady]);
   // Save changes to browser storage and Supabase.
   useEffect(() => {
-    if (!cloudReady) return;
+    if (!cloudReady || restoreInProgressRef.current) return;
 
 
     const isRemoteUpdate =
@@ -306,9 +313,10 @@ if (isRemoteUpdate) return;
 
     localStorage.setItem('jee_tasks', JSON.stringify(tasks));
 
-    const saveTasks = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+    enqueueSerializedWrite(cloudWriteQueueRef, async () => {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!user) throw new Error('No authenticated user found while saving tasks.');
 
       const { error } = await supabase.from('jee_tasks').upsert({
         user_id: user.id,
@@ -316,14 +324,12 @@ if (isRemoteUpdate) return;
         data: tasks
       }, { onConflict: 'user_id,record_id' });
 
-      if (error) console.error('Task cloud save failed:', error);
-    };
-
-    saveTasks();
+      if (error) throw error;
+    }).catch(error => console.error('Task cloud save failed:', error));
   }, [tasks, cloudReady]);
 
   useEffect(() => {
-    if (!cloudReady) return;
+    if (!cloudReady || restoreInProgressRef.current) return;
 
 
     const isRemoteUpdate =
@@ -336,9 +342,10 @@ if (isRemoteUpdate) return;
 
     localStorage.setItem('jee_tests', JSON.stringify(tests));
 
-    const saveTests = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+    enqueueSerializedWrite(cloudWriteQueueRef, async () => {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!user) throw new Error('No authenticated user found while saving tests.');
 
       const { error } = await supabase.from('jee_tests').upsert({
         user_id: user.id,
@@ -346,14 +353,12 @@ if (isRemoteUpdate) return;
         data: tests
       }, { onConflict: 'user_id,record_id' });
 
-      if (error) console.error('Test cloud save failed:', error);
-    };
-
-    saveTests();
+      if (error) throw error;
+    }).catch(error => console.error('Test cloud save failed:', error));
   }, [tests, cloudReady]);
 
   useEffect(() => {
-    if (!cloudReady) return;
+    if (!cloudReady || restoreInProgressRef.current) return;
 const isRemoteUpdate =
   remoteSyncRef.current.mistakes !== null &&
   JSON.stringify(mistakes) === JSON.stringify(remoteSyncRef.current.mistakes);
@@ -363,9 +368,10 @@ remoteSyncRef.current.mistakes = null;
 if (isRemoteUpdate) return;
     localStorage.setItem('jee_mistakes', JSON.stringify(mistakes));
 
-    const saveMistakes = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+    enqueueSerializedWrite(cloudWriteQueueRef, async () => {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!user) throw new Error('No authenticated user found while saving mistakes.');
 
       const { error } = await supabase.from('jee_mistakes').upsert({
         user_id: user.id,
@@ -373,10 +379,8 @@ if (isRemoteUpdate) return;
         data: mistakes
       }, { onConflict: 'user_id,record_id' });
 
-      if (error) console.error('Mistake cloud save failed:', error);
-    };
-
-    saveMistakes();
+      if (error) throw error;
+    }).catch(error => console.error('Mistake cloud save failed:', error));
   }, [mistakes, cloudReady]);
 
 
@@ -555,6 +559,7 @@ if (isRemoteUpdate) return;
         <NavItem active={activeTab === 'mistakes'} onClick={() => setActiveTab('mistakes')} icon={ShieldAlert} label="Mistake Log (Test/Module)" />
         <NavItem active={activeTab === 'schedule'} onClick={() => setActiveTab('schedule')} icon={Calendar} label="Tasks & Schedule Table" />
         <NavItem active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={Layers} label="Permanent Vault & Stats" />
+        <NavItem active={activeTab === 'backup'} onClick={() => setActiveTab('backup')} icon={ShieldAlert} label="Backup & Restore" />
       </aside>
 
       <main className="md:col-span-9">
@@ -566,6 +571,7 @@ if (isRemoteUpdate) return;
         {activeTab === 'mistakes' && <MistakeAnalysisView mistakes={mistakes} onOpenMistakeModal={(m) => { setMistakeModalMode(m); setEditingMistake(null); setShowMistakeModal(true); }} onEditMistake={(m) => { setEditingMistake(m); setMistakeModalMode(m.sourceType); setShowMistakeModal(true); }} onDeleteMistake={handleDeleteMistake} />}
         {activeTab === 'schedule' && <ScheduleView tasks={tasks} setTasks={setTasks} onOpenTaskModal={(t) => { setEditingTask(t); setShowTaskModal(true); }} />}
         {activeTab === 'history' && <HistoryVaultView mistakes={mistakes} onEditMistake={(m) => { setEditingMistake(m); setMistakeModalMode(m.sourceType); setShowMistakeModal(true); }} onDeleteMistake={handleDeleteMistake} />}
+        {activeTab === 'backup' && <BackupRestoreView tasks={tasks} tests={tests} mistakes={mistakes} setTasks={setTasks} setTests={setTests} setMistakes={setMistakes} cloudReady={cloudReady} restoreInProgressRef={restoreInProgressRef} remoteSyncRef={remoteSyncRef} cloudWriteQueueRef={cloudWriteQueueRef} />}
       </main>
     </div>
 
