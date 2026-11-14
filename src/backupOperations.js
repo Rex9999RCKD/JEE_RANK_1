@@ -47,3 +47,13 @@ export async function replaceBackupCollections({ client, userId, incomingData, p
       : `Restore failed while saving ${item.label}, and automatic rollback was incomplete. Use the downloaded pre-restore safety backup to recover your original data.`);
   }
 }
+
+/**
+ * Adds a cloud write to a serialized queue. Failed writes remain observable
+ * to the restore barrier, while later writes can still proceed.
+ */
+export function enqueueSerializedWrite(queueRef, write) {
+  const pending = queueRef.current.then(write, write);
+  queueRef.current = pending;
+  return pending;
+}
