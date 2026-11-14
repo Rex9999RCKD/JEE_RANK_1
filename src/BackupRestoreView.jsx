@@ -1,14 +1,8 @@
 import React, { useRef, useState } from 'react';
 import { Download, Upload, ShieldCheck, AlertTriangle, CheckCircle2, Database } from 'lucide-react';
 import { supabase } from './supabase';
-
-const BACKUP_FORMAT = 'jee-rank-1-backup';
-const BACKUP_VERSION = 1;
-const COLLECTIONS = [
-  { key: 'tasks', table: 'jee_tasks', label: 'Tasks & schedules' },
-  { key: 'tests', table: 'jee_tests', label: 'Test records' },
-  { key: 'mistakes', table: 'jee_mistakes', label: 'Mistake logbook' }
-];
+import { BACKUP_FORMAT, BACKUP_VERSION, BACKUP_COLLECTIONS, validateBackup } from './backupValidation';
+const COLLECTIONS = BACKUP_COLLECTIONS.map(item => ({ ...item, table: `jee_${item.key}` }));
 
 function downloadJson(data, prefix = 'jee-rank-1-backup') {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -64,45 +58,7 @@ export default function BackupRestoreView({ tasks, tests, mistakes, setTasks, se
     if (!file) return;
     try {
       if (file.size > 10 * 1024 * 1024) throw new Error('Backup file is larger than 10 MB.');
-      const parsed = JSON.parse(await file.text());
-      if (!parsed || parsed.format !== BACKUP_FORMAT || parsed.version !== BACKUP_VERSION) {
-        throw new Error('This is not a supported JEE RANK 1 backup file.');
-      }
-      if (typeof parsed.account?.userId !== 'string' || !parsed.account.userId.trim()) {
-        throw new Error('The backup is missing its account information.');
-      }
-      if (!parsed.data || typeof parsed.data !== 'object' || Array.isArray(parsed.data) ||
-          !COLLECTIONS.every(({ key }) => Array.isArray(parsed.data[key]))) {
-        throw new Error('The backup is incomplete or has an invalid structure.');
-      }
-      if (typeof parsed.exportedAt !== 'string' || !Number.isFinite(Date.parse(parsed.exportedAt))) {
-        throw new Error('The backup date is missing or invalid.');
-      }
-
-      const total = COLLECTIONS.reduce((sum, item) => sum + parsed.data[item.key].length, 0);
-      if (total > 100000) throw new Error('The backup contains too many records to restore safely.');
-
-      // Validate every entry before allowing the user to proceed. Do not mutate data here.
-      for (const collection of COLLECTIONS) {
-        const records = parsed.data[collection.key];
-        const seenIds = new Set();
-        for (const record of records) {
-          if (!record || typeof record !== 'object' || Array.isArray(record)) {
-            throw new Error(`The backup contains an invalid entry in ${collection.label}.`);
-          }
-          if (record.id !== undefined && record.id !== null) {
-            if (typeof record.id !== 'string' && typeof record.id !== 'number') {
-              throw new Error(`The backup contains an invalid record ID in ${collection.label}.`);
-            }
-            const normalizedId = String(record.id);
-            if (seenIds.has(normalizedId)) {
-              throw new Error(`The backup contains duplicate record IDs in ${collection.label}.`);
-            }
-            seenIds.add(normalizedId);
-          }
-        }
-      }
-
+      const parsed = validateBackup(JSON.parse(await file.text()));
       setSelectedBackup(parsed);
     } catch (error) {
       setBackupError(error.message || 'Could not read this backup file.');
