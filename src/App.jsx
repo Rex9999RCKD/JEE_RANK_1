@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import BackupRestoreView from './BackupRestoreView';
 import { 
   Calendar, Clock, CheckCircle2, AlertTriangle, BookOpen, Brain, 
   Plus, Search, Filter, Trash2, RefreshCw, ChevronRight, Award, 
@@ -45,7 +46,7 @@ const formatTimeSlot = (slot) => {
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'alerts', 'longterm', 'mistakes', 'schedule', 'history'
+  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'alerts', 'longterm', 'mistakes', 'schedule', 'history', 'backup'
   
   // Tasks state with explicit dates, times, priority, type and deadlines
   const [tasks, setTasks] = useState(() => loadStorageJSON('jee_tasks', [
@@ -555,6 +556,7 @@ if (isRemoteUpdate) return;
         <NavItem active={activeTab === 'mistakes'} onClick={() => setActiveTab('mistakes')} icon={ShieldAlert} label="Mistake Log (Test/Module)" />
         <NavItem active={activeTab === 'schedule'} onClick={() => setActiveTab('schedule')} icon={Calendar} label="Tasks & Schedule Table" />
         <NavItem active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={Layers} label="Permanent Vault & Stats" />
+        <NavItem active={activeTab === 'backup'} onClick={() => setActiveTab('backup')} icon={ShieldAlert} label="Backup & Restore" />
       </aside>
 
       <main className="md:col-span-9">
@@ -566,6 +568,7 @@ if (isRemoteUpdate) return;
         {activeTab === 'mistakes' && <MistakeAnalysisView mistakes={mistakes} onOpenMistakeModal={(m) => { setMistakeModalMode(m); setEditingMistake(null); setShowMistakeModal(true); }} onEditMistake={(m) => { setEditingMistake(m); setMistakeModalMode(m.sourceType); setShowMistakeModal(true); }} onDeleteMistake={handleDeleteMistake} />}
         {activeTab === 'schedule' && <ScheduleView tasks={tasks} setTasks={setTasks} onOpenTaskModal={(t) => { setEditingTask(t); setShowTaskModal(true); }} />}
         {activeTab === 'history' && <HistoryVaultView mistakes={mistakes} onEditMistake={(m) => { setEditingMistake(m); setMistakeModalMode(m.sourceType); setShowMistakeModal(true); }} onDeleteMistake={handleDeleteMistake} />}
+        {activeTab === 'backup' && <BackupRestoreView tasks={tasks} tests={tests} mistakes={mistakes} setTasks={setTasks} setTests={setTests} setMistakes={setMistakes} cloudReady={cloudReady} />}
       </main>
     </div>
 
