@@ -20,7 +20,8 @@ function downloadJson(data, prefix = 'jee-rank-1-backup') {
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  URL.revokeObjectURL(url);
+  // Revoke after the browser has had time to begin the download.
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export default function BackupRestoreView({ tasks, tests, mistakes, setTasks, setTests, setMistakes, cloudReady }) {
@@ -67,11 +68,41 @@ export default function BackupRestoreView({ tasks, tests, mistakes, setTasks, se
       if (!parsed || parsed.format !== BACKUP_FORMAT || parsed.version !== BACKUP_VERSION) {
         throw new Error('This is not a supported JEE RANK 1 backup file.');
       }
-      if (!parsed.account?.userId || !parsed.data || !COLLECTIONS.every(({ key }) => Array.isArray(parsed.data[key]))) {
+      if (typeof parsed.account?.userId !== 'string' || !parsed.account.userId.trim()) {
+        throw new Error('The backup is missing its account information.');
+      }
+      if (!parsed.data || typeof parsed.data !== 'object' || Array.isArray(parsed.data) ||
+          !COLLECTIONS.every(({ key }) => Array.isArray(parsed.data[key]))) {
         throw new Error('The backup is incomplete or has an invalid structure.');
       }
+      if (typeof parsed.exportedAt !== 'string' || !Number.isFinite(Date.parse(parsed.exportedAt))) {
+        throw new Error('The backup date is missing or invalid.');
+      }
+
       const total = COLLECTIONS.reduce((sum, item) => sum + parsed.data[item.key].length, 0);
       if (total > 100000) throw new Error('The backup contains too many records to restore safely.');
+
+      // Validate every entry before allowing the user to proceed. Do not mutate data here.
+      for (const collection of COLLECTIONS) {
+        const records = parsed.data[collection.key];
+        const seenIds = new Set();
+        for (const record of records) {
+          if (!record || typeof record !== 'object' || Array.isArray(record)) {
+            throw new Error(`The backup contains an invalid entry in ${collection.label}.`);
+          }
+          if (record.id !== undefined && record.id !== null) {
+            if (typeof record.id !== 'string' && typeof record.id !== 'number') {
+              throw new Error(`The backup contains an invalid record ID in ${collection.label}.`);
+            }
+            const normalizedId = String(record.id);
+            if (seenIds.has(normalizedId)) {
+              throw new Error(`The backup contains duplicate record IDs in ${collection.label}.`);
+            }
+            seenIds.add(normalizedId);
+          }
+        }
+      }
+
       setSelectedBackup(parsed);
     } catch (error) {
       setBackupError(error.message || 'Could not read this backup file.');
