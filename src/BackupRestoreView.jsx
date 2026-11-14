@@ -2,21 +2,8 @@ import React, { useRef, useState } from 'react';
 import { Download, Upload, ShieldCheck, AlertTriangle, CheckCircle2, Database } from 'lucide-react';
 import { supabase } from './supabase';
 import { BACKUP_FORMAT, BACKUP_VERSION, BACKUP_COLLECTIONS, validateBackup } from './backupValidation';
+import { downloadJson, assertBackupAccount, replaceBackupCollections } from './backupOperations';
 const COLLECTIONS = BACKUP_COLLECTIONS.map(item => ({ ...item, table: `jee_${item.key}` }));
-
-function downloadJson(data, prefix = 'jee-rank-1-backup') {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  anchor.href = url;
-  anchor.download = `${prefix}-${stamp}.json`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  // Revoke after the browser has had time to begin the download.
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 
 export default function BackupRestoreView({ tasks, tests, mistakes, setTasks, setTests, setMistakes, cloudReady }) {
   const fileInputRef = useRef(null);
@@ -74,9 +61,7 @@ export default function BackupRestoreView({ tasks, tests, mistakes, setTasks, se
       if (!cloudReady) throw new Error('Cloud data is not ready. Please wait and try again.');
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) throw new Error('Please sign in again before restoring.');
-      if (selectedBackup.account.userId !== user.id) {
-        throw new Error('This backup belongs to a different account. Sign in to the account that created it.');
-      }
+      assertBackupAccount(selectedBackup, user.id);
 
       // Download a safety copy of the currently loaded data before replacing anything.
       const safetyBackup = {
@@ -90,30 +75,13 @@ export default function BackupRestoreView({ tasks, tests, mistakes, setTasks, se
       };
       downloadJson(safetyBackup, 'jee-rank-1-pre-restore-safety');
 
-      const savedKeys = [];
-      for (const item of COLLECTIONS) {
-        const { error } = await supabase.from(item.table).upsert({
-          user_id: user.id,
-          record_id: '__all__',
-          data: selectedBackup.data[item.key]
-        }, { onConflict: 'user_id,record_id' });
-        if (error) {
-          let rollbackSucceeded = true;
-          for (const savedKey of savedKeys.reverse()) {
-            const previous = COLLECTIONS.find(collection => collection.key === savedKey);
-            const rollback = await supabase.from(previous.table).upsert({
-              user_id: user.id,
-              record_id: '__all__',
-              data: currentData[savedKey]
-            }, { onConflict: 'user_id,record_id' });
-            if (rollback.error) rollbackSucceeded = false;
-          }
-          throw new Error(rollbackSucceeded
-            ? `Restore failed while saving ${item.label}. Previously saved collections were rolled back; your safety backup was downloaded.`
-            : `Restore failed while saving ${item.label}, and automatic rollback was incomplete. Use the downloaded pre-restore safety backup to recover your original data.`);
-        }
-        savedKeys.push(item.key);
-      }
+      await replaceBackupCollections({
+        client: supabase,
+        userId: user.id,
+        incomingData: selectedBackup.data,
+        previousData: currentData,
+        collections: COLLECTIONS
+      });
 
       setTasks(selectedBackup.data.tasks);
       setTests(selectedBackup.data.tests);
