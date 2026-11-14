@@ -59,23 +59,25 @@ export default function BackupRestoreView({ tasks, tests, mistakes, setTasks, se
     setBusy(true);
     try {
       if (!cloudReady) throw new Error('Cloud data is not ready. Please wait and try again.');
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) throw new Error('Please sign in again before restoring.');
-      assertBackupAccount(selectedBackup, user.id);
       if (!restoreInProgressRef || !remoteSyncRef) throw new Error('Restore synchronization safeguards are unavailable. Please reload and try again.');
-      restoreInProgressRef.current = true;
 
-      // Download a safety copy of the currently loaded data before replacing anything.
+      // Start the safety download directly in the confirmation click handler,
+      // before awaiting network/auth calls that may consume browser user activation.
       const safetyBackup = {
         format: BACKUP_FORMAT,
         version: BACKUP_VERSION,
         app: 'JEE RANK 1',
         exportedAt: new Date().toISOString(),
-        account: { userId: user.id },
+        account: { userId: selectedBackup.account.userId },
         data: currentData,
-        note: 'Automatically created immediately before a restore.'
+        note: 'Safety copy created before a restore attempt.'
       };
       downloadJson(safetyBackup, 'jee-rank-1-pre-restore-safety');
+
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) throw new Error('Please sign in again before restoring.');
+      assertBackupAccount(selectedBackup, user.id);
+      restoreInProgressRef.current = true;
 
       await replaceBackupCollections({
         client: supabase,
