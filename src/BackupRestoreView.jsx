@@ -5,7 +5,7 @@ import { BACKUP_FORMAT, BACKUP_VERSION, BACKUP_COLLECTIONS, validateBackup } fro
 import { downloadJson, assertBackupAccount, replaceBackupCollections } from './backupOperations';
 const COLLECTIONS = BACKUP_COLLECTIONS.map(item => ({ ...item, table: `jee_${item.key}` }));
 
-export default function BackupRestoreView({ tasks, tests, mistakes, setTasks, setTests, setMistakes, cloudReady }) {
+export default function BackupRestoreView({ tasks, tests, mistakes, setTasks, setTests, setMistakes, cloudReady, restoreInProgressRef, remoteSyncRef }) {
   const fileInputRef = useRef(null);
   const [selectedBackup, setSelectedBackup] = useState(null);
   const [backupError, setBackupError] = useState('');
@@ -31,7 +31,7 @@ export default function BackupRestoreView({ tasks, tests, mistakes, setTasks, se
         data: currentData
       };
       downloadJson(backup);
-      setStatus('Backup downloaded successfully. Keep this file somewhere safe.');
+      setStatus('Backup download was started. Check your browser downloads and keep the file somewhere safe.');
     } catch (error) {
       setBackupError(error.message || 'Could not create the backup.');
     }
@@ -62,6 +62,8 @@ export default function BackupRestoreView({ tasks, tests, mistakes, setTasks, se
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) throw new Error('Please sign in again before restoring.');
       assertBackupAccount(selectedBackup, user.id);
+      if (!restoreInProgressRef || !remoteSyncRef) throw new Error('Restore synchronization safeguards are unavailable. Please reload and try again.');
+      restoreInProgressRef.current = true;
 
       // Download a safety copy of the currently loaded data before replacing anything.
       const safetyBackup = {
@@ -83,16 +85,22 @@ export default function BackupRestoreView({ tasks, tests, mistakes, setTasks, se
         collections: COLLECTIONS
       });
 
+      // Mark the incoming values as remote-originated so the normal autosave effects
+      // do not race the restore with redundant writes after React applies state.
+      remoteSyncRef.current.tasks = selectedBackup.data.tasks;
+      remoteSyncRef.current.tests = selectedBackup.data.tests;
+      remoteSyncRef.current.mistakes = selectedBackup.data.mistakes;
       setTasks(selectedBackup.data.tasks);
       setTests(selectedBackup.data.tests);
       setMistakes(selectedBackup.data.mistakes);
-      setStatus('Restore completed. Your pre-restore safety backup was also downloaded. Keep both files safe.');
+      setStatus('Restore completed. A pre-restore safety-backup download was started; check your browser downloads. Keep both files safe.');
       setSelectedBackup(null);
       setConfirmRestore(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
     } catch (error) {
       setBackupError(error.message || 'Restore failed.');
     } finally {
+      if (restoreInProgressRef) restoreInProgressRef.current = false;
       setBusy(false);
     }
   };
