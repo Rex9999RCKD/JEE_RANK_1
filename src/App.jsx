@@ -150,6 +150,7 @@ export default function App() {
   mistakes: null
 });
   const initialDataRef = useRef({ tasks, tests, mistakes });
+  const restoreInProgressRef = useRef(false);
 
   // Load cloud data and migrate existing local data on first login.
   useEffect(() => {
@@ -251,6 +252,7 @@ useEffect(() => {
         filter: `user_id=eq.${user.id}`
       }, (payload) => {
         const data = payload.new.data;
+        if (restoreInProgressRef.current) return;
         if (Array.isArray(data)) {
           remoteSyncRef.current.tasks = data;
           setTasks(data);
@@ -264,6 +266,7 @@ useEffect(() => {
         filter: `user_id=eq.${user.id}`
       }, (payload) => {
         const data = payload.new.data;
+        if (restoreInProgressRef.current) return;
         if (Array.isArray(data)) {
           remoteSyncRef.current.tests = data;
           setTests(data);
@@ -277,6 +280,7 @@ useEffect(() => {
         filter: `user_id=eq.${user.id}`
       }, (payload) => {
         const data = payload.new.data;
+        if (restoreInProgressRef.current) return;
         if (Array.isArray(data)) {
           remoteSyncRef.current.mistakes = data;
           setMistakes(data);
@@ -294,7 +298,7 @@ useEffect(() => {
 }, [cloudReady]);
   // Save changes to browser storage and Supabase.
   useEffect(() => {
-    if (!cloudReady) return;
+    if (!cloudReady || restoreInProgressRef.current) return;
 
 
     const isRemoteUpdate =
@@ -324,7 +328,7 @@ if (isRemoteUpdate) return;
   }, [tasks, cloudReady]);
 
   useEffect(() => {
-    if (!cloudReady) return;
+    if (!cloudReady || restoreInProgressRef.current) return;
 
 
     const isRemoteUpdate =
@@ -354,7 +358,7 @@ if (isRemoteUpdate) return;
   }, [tests, cloudReady]);
 
   useEffect(() => {
-    if (!cloudReady) return;
+    if (!cloudReady || restoreInProgressRef.current) return;
 const isRemoteUpdate =
   remoteSyncRef.current.mistakes !== null &&
   JSON.stringify(mistakes) === JSON.stringify(remoteSyncRef.current.mistakes);
@@ -568,7 +572,7 @@ if (isRemoteUpdate) return;
         {activeTab === 'mistakes' && <MistakeAnalysisView mistakes={mistakes} onOpenMistakeModal={(m) => { setMistakeModalMode(m); setEditingMistake(null); setShowMistakeModal(true); }} onEditMistake={(m) => { setEditingMistake(m); setMistakeModalMode(m.sourceType); setShowMistakeModal(true); }} onDeleteMistake={handleDeleteMistake} />}
         {activeTab === 'schedule' && <ScheduleView tasks={tasks} setTasks={setTasks} onOpenTaskModal={(t) => { setEditingTask(t); setShowTaskModal(true); }} />}
         {activeTab === 'history' && <HistoryVaultView mistakes={mistakes} onEditMistake={(m) => { setEditingMistake(m); setMistakeModalMode(m.sourceType); setShowMistakeModal(true); }} onDeleteMistake={handleDeleteMistake} />}
-        {activeTab === 'backup' && <BackupRestoreView tasks={tasks} tests={tests} mistakes={mistakes} setTasks={setTasks} setTests={setTests} setMistakes={setMistakes} cloudReady={cloudReady} />}
+        {activeTab === 'backup' && <BackupRestoreView tasks={tasks} tests={tests} mistakes={mistakes} setTasks={setTasks} setTests={setTests} setMistakes={setMistakes} cloudReady={cloudReady} restoreInProgressRef={restoreInProgressRef} remoteSyncRef={remoteSyncRef} />}
       </main>
     </div>
 
