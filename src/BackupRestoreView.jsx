@@ -103,6 +103,7 @@ export default function BackupRestoreView({ tasks, tests, mistakes, setTasks, se
       };
       downloadJson(safetyBackup, 'jee-rank-1-pre-restore-safety');
 
+      const savedKeys = [];
       for (const item of COLLECTIONS) {
         const { error } = await supabase.from(item.table).upsert({
           user_id: user.id,
@@ -110,8 +111,21 @@ export default function BackupRestoreView({ tasks, tests, mistakes, setTasks, se
           data: selectedBackup.data[item.key]
         }, { onConflict: 'user_id,record_id' });
         if (error) {
-          throw new Error(`Restore stopped while saving ${item.label}. Earlier collections may already have been restored. Your pre-restore safety backup was downloaded.`);
+          let rollbackSucceeded = true;
+          for (const savedKey of savedKeys.reverse()) {
+            const previous = COLLECTIONS.find(collection => collection.key === savedKey);
+            const rollback = await supabase.from(previous.table).upsert({
+              user_id: user.id,
+              record_id: '__all__',
+              data: currentData[savedKey]
+            }, { onConflict: 'user_id,record_id' });
+            if (rollback.error) rollbackSucceeded = false;
+          }
+          throw new Error(rollbackSucceeded
+            ? `Restore failed while saving ${item.label}. Previously saved collections were rolled back; your safety backup was downloaded.`
+            : `Restore failed while saving ${item.label}, and automatic rollback was incomplete. Use the downloaded pre-restore safety backup to recover your original data.`);
         }
+        savedKeys.push(item.key);
       }
 
       setTasks(selectedBackup.data.tasks);
