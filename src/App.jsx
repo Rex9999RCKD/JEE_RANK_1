@@ -5,7 +5,7 @@ import {
   Calendar, Clock, CheckCircle2, AlertTriangle, BookOpen, Brain, 
   Plus, Search, Filter, Trash2, RefreshCw, ChevronRight, Award, 
   BarChart3, Tag, HelpCircle, Layers, Sparkles, FileText, ArrowRight,
-  ShieldAlert, Check, X, Bell, Zap, Flame, RotateCcw, Edit, Moon, Sun
+  ShieldAlert, Check, X, Bell, Zap, Flame, RotateCcw, Edit, Moon, Sun, LogOut
 } from 'lucide-react';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
@@ -42,6 +42,8 @@ const formatTimeSlot = (slot) => {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard', 'alerts', 'longterm', 'mistakes', 'schedule', 'history', 'backup'
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState('');
   
   // Tasks state with explicit dates, times, priority, type and deadlines
   const [tasks, setTasks] = useState(() => loadStorageJSON('jee_tasks', [
@@ -462,6 +464,30 @@ if (isRemoteUpdate) return;
     setMistakes(prev => prev.filter(m => m.id !== id));
   };
 
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    setLogoutError('');
+
+    try {
+      // Let any queued cloud saves finish before ending this session.
+      await cloudWriteQueueRef.current.catch(error => {
+        console.error('A queued cloud save failed before logout:', error);
+      });
+
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+
+      // Cloud data remains safely stored in the user's account. Clear only
+      // this browser's cached copy so another account cannot inherit it.
+      ['jee_tasks', 'jee_tests', 'jee_mistakes'].forEach(key => localStorage.removeItem(key));
+    } catch (error) {
+      console.error('Logout failed:', error);
+      setLogoutError(error.message || 'Unable to log out. Please try again.');
+      setLoggingOut(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
       {/* Top Navbar */}
@@ -515,6 +541,19 @@ if (isRemoteUpdate) return;
         <NavItem active={activeTab === 'schedule'} onClick={() => setActiveTab('schedule')} icon={Calendar} label="Tasks & Schedule Table" />
         <NavItem active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={Layers} label="Permanent Vault & Stats" />
         <NavItem active={activeTab === 'backup'} onClick={() => setActiveTab('backup')} icon={ShieldAlert} label="Backup & Restore" />
+
+        <div className="pt-3 mt-3 border-t border-slate-200">
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={loggingOut}
+            className="w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl font-semibold text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-60 disabled:cursor-not-allowed transition"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>{loggingOut ? 'Logging out...' : 'Log out'}</span>
+          </button>
+          {logoutError && <p role="alert" className="px-3.5 mt-1 text-xs text-rose-600">{logoutError}</p>}
+        </div>
       </aside>
 
       <main className="md:col-span-9">
