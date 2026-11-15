@@ -114,7 +114,7 @@ export default function App() {
       reminderCount: 0,
       status: 'Pending Revision'
     }
-  ]), new Date().toISOString().split('T')[0]));
+  ]));
 
   // Modal States
   const [showTaskModal, setShowTaskModal] = useState(false);
