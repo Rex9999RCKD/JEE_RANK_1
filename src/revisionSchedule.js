@@ -77,11 +77,14 @@ export const migrateMistakeSchedules = (mistakes, migrationDate) =>
     if (mistake.status === 'Long-term Revision') {
       const stage = Math.min(Math.max(mistake.longTermStage || 0, 0), 2);
       const intervals = [7, 15, 30];
+      const lastReviewDate = Array.isArray(mistake.longTermHistory) && mistake.longTermHistory.length
+        ? mistake.longTermHistory[mistake.longTermHistory.length - 1]
+        : (mistake.masteredDate || migrationDate);
       return {
         ...mistake,
         longTermStage: stage,
-        lastReviewedDate: migrationDate,
-        nextReminderDate: addDays(migrationDate, intervals[stage]),
+        lastReviewedDate: lastReviewDate,
+        nextReminderDate: addDays(lastReviewDate, intervals[stage]),
         scheduleVersion: 2
       };
     }
