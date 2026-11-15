@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assertBackupAccount, downloadJson, replaceBackupCollections } from '../src/backupOperations.js';
+import { assertBackupAccount, downloadJson, replaceBackupCollections, enqueueSerializedWrite } from '../src/backupOperations.js';
 
 const collections = [
   { key: 'tasks', table: 'jee_tasks', label: 'Tasks' },
