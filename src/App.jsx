@@ -10,6 +10,7 @@ import {
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import { supabase } from './supabase';
+import { addDays, migrateMistakeSchedules, scheduleMistakeDecision, advanceLongTermReview } from './revisionSchedule';
 
 // Safe LocalStorage Reader Helper
 const loadStorageJSON = (key, fallback) => {
@@ -20,13 +21,6 @@ const loadStorageJSON = (key, fallback) => {
     console.error(`Error loading key ${key}:`, err);
     return fallback;
   }
-};
-
-// Add calendar days without UTC timezone shifting.
-const addDays = (dateString, days) => {
-  const date = new Date(`${dateString}T12:00:00`);
-  date.setDate(date.getDate() + days);
-  return date.toISOString().split('T')[0];
 };
 
 // Display stored 24-hour times in 12-hour AM/PM format.
@@ -120,18 +114,7 @@ export default function App() {
       reminderCount: 0,
       status: 'Pending Revision'
     }
-  ]).map(m => {
-    // Migrate topics mastered under the old 3-day-only system into the new day-7 stage.
-    if (m.status === 'Mastered' && m.longTermStage == null) {
-      return {
-        ...m,
-        status: 'Long-term Revision',
-        longTermStage: 0,
-        nextReminderDate: addDays(m.loggedDate || new Date().toISOString().split('T')[0], 16)
-      };
-    }
-    return m;
-  }));
+  ]), new Date().toISOString().split('T')[0]));
 
   // Modal States
   const [showTaskModal, setShowTaskModal] = useState(false);
@@ -216,9 +199,14 @@ export default function App() {
 
         if (cancelled) return;
 
+        const migratedMistakes = migrateMistakeSchedules(
+          loaded.jee_mistakes,
+          new Date().toISOString().split('T')[0]
+        );
         setTasks(loaded.jee_tasks);
         setTests(loaded.jee_tests);
-        setMistakes(loaded.jee_mistakes);
+        setMistakes(migratedMistakes);
+        localStorage.setItem('jee_mistakes', JSON.stringify(migratedMistakes));
 
         setCloudReady(true);
         console.log('JEE RANK 1 cloud data loaded successfully.');
@@ -387,12 +375,12 @@ if (isRemoteUpdate) return;
   // Today Date string YYYY-MM-DD
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
 
-  // Reminders due today or overdue in the original 3-day loop.
+  // Each mistake owns its own reminder date. Follow-up dates are calculated
+  // from the day that individual mistake is reviewed, not its original log date.
   const dueReminders = useMemo(() => {
     return (mistakes || []).filter(m => m.status === 'Pending Revision' && m.nextReminderDate <= todayStr);
   }, [mistakes, todayStr]);
 
-  // Topics that passed the 3-day loop and are progressing through cumulative days 16, 31 and 61.
   const longTermReminders = useMemo(() => {
     return (mistakes || []).filter(m => m.status === 'Long-term Revision');
   }, [mistakes]);
@@ -401,50 +389,17 @@ if (isRemoteUpdate) return;
   }, [longTermReminders, todayStr]);
 
   const handleSpacedRepetitionDecision = (mistakeId, extend3Days) => {
-    setMistakes(prev => prev.map(m => {
-      if (m.id !== mistakeId) return m;
-      const originalLoggedDate = m.loggedDate || todayStr;
-
-      if (extend3Days) {
-        // Keep 3-day reminders anchored to the original logged date:
-        // day 3, then day 6, then day 9, and so on.
-        const nextReminderCount = (m.reminderCount || 0) + 1;
-        const nextOffset = 3 * (nextReminderCount + 1);
-        return {
-          ...m,
-          reminderCount: nextReminderCount,
-          nextReminderDate: addDays(originalLoggedDate, nextOffset),
-          status: 'Pending Revision'
-        };
-      }
-
-      // Mastered in the 3-day loop: begin the cumulative long-term cycle at day 16.
-      return {
-        ...m,
-        status: 'Long-term Revision',
-        longTermStage: 0,
-        nextReminderDate: addDays(originalLoggedDate, 16),
-        longTermHistory: []
-      };
-    }));
+    setMistakes(prev => prev.map(m => m.id === mistakeId
+      ? scheduleMistakeDecision(m, extend3Days, todayStr)
+      : m
+    ));
   };
 
   const handleLongTermDecision = (mistakeId) => {
-    setMistakes(prev => prev.map(m => {
-      if (m.id !== mistakeId || m.status !== 'Long-term Revision') return m;
-      const nextStage = (m.longTermStage || 0) + 1;
-      // Cumulative offsets from the original logged date: day 16, 31 and 61.
-      const cumulativeReviewDays = [16, 31, 61];
-      if (nextStage >= cumulativeReviewDays.length) {
-        return { ...m, status: 'Mastered', longTermStage: 3, nextReminderDate: null, masteredDate: todayStr };
-      }
-      return {
-        ...m,
-        longTermStage: nextStage,
-        nextReminderDate: addDays(m.loggedDate || todayStr, cumulativeReviewDays[nextStage]),
-        longTermHistory: [...(m.longTermHistory || []), todayStr]
-      };
-    }));
+    setMistakes(prev => prev.map(m => m.id === mistakeId
+      ? advanceLongTermReview(m, todayStr)
+      : m
+    ));
   };
 
   const handleSaveTask = (taskData) => {
@@ -688,27 +643,27 @@ function SpacedRepetitionView({ dueReminders, onDecision }) {
 }
 
 function LongTermRevisionView({ reminders, todayStr, totalReminders, onReviewed }) {
-  const stageDays = [16, 31, 61];
+  const stageDays = [7, 15, 30];
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-slate-900">7-15-30 Days Spaced Revision</h2>
-        <p className="text-slate-500 text-sm mt-0.5">After the day-3, day-6 and day-9 loop, mastered topics are reviewed on cumulative days 16, 31 and 61 from their original log date.</p>
+        <p className="text-slate-500 text-sm mt-0.5">After selecting “No (Mastered)” in the 3-day reminder, each mistake gets its own 7-day, 15-day and 30-day review intervals. Every interval starts from the date you complete the previous review.</p>
       </div>
       <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-2xl text-xs text-indigo-900">
-        <strong>{totalReminders} topics</strong> are in the long-term cycle. Reviews are due on day 16, day 31 and day 61, all calculated from the original logged date.
+        <strong>{totalReminders} topics</strong> are in the long-term cycle. Each question has an independent next-review date, calculated from its own review history.
       </div>
       {reminders.length === 0 ? (
         <div className="bg-emerald-50 border border-emerald-200 p-8 rounded-2xl text-center space-y-2">
           <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
           <h3 className="font-extrabold text-emerald-900 text-base">No Long-term Reviews Due</h3>
-          <p className="text-xs text-emerald-700">Topics will appear here after they are mastered in the 3-day loop.</p>
+          <p className="text-xs text-emerald-700">Topics will appear here after you mark an individual mistake as mastered in the 3-day loop.</p>
         </div>
       ) : reminders.map(m => {
         const stage = m.longTermStage || 0;
         return (
           <div key={m.id} className="bg-white border border-indigo-200 p-5 rounded-2xl shadow-sm space-y-3">
-            <div className="flex items-center justify-between gap-2"><span className="bg-indigo-100 text-indigo-800 font-black text-[10px] px-2.5 py-1 rounded-md">Day {stageDays[stage]} • Review {stage + 1}/3</span><span className="text-xs text-slate-500">Logged: {m.loggedDate}</span></div>
+            <div className="flex items-center justify-between gap-2"><span className="bg-indigo-100 text-indigo-800 font-black text-[10px] px-2.5 py-1 rounded-md">{stageDays[stage]}-Day Interval • Review {stage + 1}/3</span><span className="text-xs text-slate-500">Logged: {m.loggedDate}</span></div>
             <div><h4 className="font-black text-slate-900 text-base">{m.exerciseNo} ({m.questionNo})</h4><p className="text-xs font-bold text-slate-700">{m.sourceType}: {m.sourceName}</p>{m.formulaNote && <p className="text-xs text-slate-600 italic bg-slate-50 p-3 rounded-xl border mt-2">Note: {m.formulaNote}</p>}</div>
             <div className="pt-3 border-t flex items-center justify-between gap-3"><p className="text-xs font-bold text-slate-700">{m.nextReminderDate <= todayStr ? 'Did you complete this revision?' : `Scheduled for ${m.nextReminderDate}`}</p>{m.nextReminderDate <= todayStr ? <button onClick={() => onReviewed(m.id)} className="bg-indigo-700 hover:bg-indigo-800 text-white font-bold text-xs px-4 py-2 rounded-xl">Reviewed — Next Stage</button> : <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-3 py-2 rounded-lg">Upcoming</span>}</div>
           </div>
@@ -842,11 +797,20 @@ function AddMistakeModal({ mode, editingMistake, onClose, onSubmit }) {
   const [questionNo, setQuestionNo] = useState(editingMistake ? editingMistake.questionNo : '');
   const [category, setCategory] = useState(editingMistake ? editingMistake.category : 'CM');
   const [formulaNote, setFormulaNote] = useState(editingMistake ? editingMistake.formulaNote : '');
+  const [nextReminderDate, setNextReminderDate] = useState(editingMistake?.nextReminderDate || '');
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!sourceName || !questionNo) return;
-    onSubmit({ sourceType: mode, sourceName, exerciseNo, questionNo, category, formulaNote });
+    onSubmit({
+      sourceType: mode,
+      sourceName,
+      exerciseNo,
+      questionNo,
+      category,
+      formulaNote,
+      ...(editingMistake ? { nextReminderDate: nextReminderDate || null } : {})
+    });
   };
 
   return (
@@ -861,6 +825,9 @@ function AddMistakeModal({ mode, editingMistake, onClose, onSubmit }) {
           </div>
           <div><label className="font-bold text-slate-700">Mistake Category</label><select value={category} onChange={e => setCategory(e.target.value)} className="w-full mt-1 p-2.5 border rounded-xl"><option value="CM">CM — Conceptual Mistake</option><option value="RM">RM — Reading Error</option><option value="SM">SM — Silly Slip</option></select></div>
           <div><label className="font-bold text-slate-700">Formula / Concept Note</label><textarea value={formulaNote} onChange={e => setFormulaNote(e.target.value)} className="w-full mt-1 p-2.5 border rounded-xl" placeholder="Brief note on what went wrong..." rows={3}></textarea></div>
+          {editingMistake && editingMistake.status !== 'Mastered' && (
+            <div><label className="font-bold text-slate-700">Next Review Date (this mistake only)</label><input type="date" value={nextReminderDate || ''} onChange={e => setNextReminderDate(e.target.value)} className="w-full mt-1 p-2.5 border rounded-xl" /><p className="text-[11px] text-slate-500 mt-1">Set a custom date for this question without changing any other mistake.</p></div>
+          )}
           <div className="flex justify-end gap-2 pt-2"><button type="button" onClick={onClose} className="px-4 py-2 border rounded-xl font-bold">Cancel</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-xl">Save Mistake</button></div>
         </form>
       </div>
