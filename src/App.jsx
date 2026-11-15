@@ -809,7 +809,7 @@ function AddMistakeModal({ mode, editingMistake, onClose, onSubmit }) {
       questionNo,
       category,
       formulaNote,
-      ...(editingMistake ? { nextReminderDate: nextReminderDate || null } : {})
+      ...(editingMistake ? { nextReminderDate: nextReminderDate || editingMistake.nextReminderDate } : {})
     });
   };
 
