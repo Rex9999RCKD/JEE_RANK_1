@@ -10,7 +10,7 @@ import {
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import { supabase } from './supabase';
-import { addDays, migrateMistakeSchedules, scheduleMistakeDecision, advanceLongTermReview } from './revisionSchedule';
+import { addDays, getLocalDateString, migrateMistakeSchedules, scheduleMistakeDecision, advanceLongTermReview } from './revisionSchedule';
 
 // Safe LocalStorage Reader Helper
 const loadStorageJSON = (key, fallback) => {
@@ -52,7 +52,7 @@ export default function App() {
       title: 'Solve 30 PYQs - Rotational Motion',
       subject: 'Physics',
       moduleOrChapter: 'Rotational Motion',
-      date: new Date().toISOString().split('T')[0],
+      date: getLocalDateString(),
       startTime: '16:00',
       endTime: '17:00',
       isScheduled: true,
@@ -67,7 +67,7 @@ export default function App() {
       title: 'Notes Revision: Electrostatics Formulae',
       subject: 'Physics',
       moduleOrChapter: 'Electrostatics',
-      date: new Date().toISOString().split('T')[0],
+      date: getLocalDateString(),
       startTime: '',
       endTime: '',
       isScheduled: false,
@@ -83,7 +83,7 @@ export default function App() {
     {
       id: 'test-1',
       name: 'JEE Main Full Mock #04',
-      date: new Date(Date.now() - 3 * 86400000).toISOString().split('T')[0],
+      date: getLocalDateString(new Date(Date.now() - 3 * 86400000)),
       totalScore: 194
     }
   ]));
@@ -98,8 +98,8 @@ export default function App() {
       questionNo: 'Q14',
       category: 'CM',
       formulaNote: 'Moment of Inertia parallel axis theorem',
-      loggedDate: new Date(Date.now() - 3 * 86400000).toISOString().split('T')[0],
-      nextReminderDate: new Date().toISOString().split('T')[0],
+      loggedDate: getLocalDateString(new Date(Date.now() - 3 * 86400000)),
+      nextReminderDate: getLocalDateString(),
       reminderCount: 0,
       status: 'Pending Revision'
     },
@@ -111,8 +111,8 @@ export default function App() {
       questionNo: 'Q08',
       category: 'SM',
       formulaNote: 'Calculation error in infinite ladder quadratic equation',
-      loggedDate: new Date(Date.now() - 3 * 86400000).toISOString().split('T')[0],
-      nextReminderDate: new Date().toISOString().split('T')[0],
+      loggedDate: getLocalDateString(new Date(Date.now() - 3 * 86400000)),
+      nextReminderDate: getLocalDateString(),
       reminderCount: 0,
       status: 'Pending Revision'
     }
@@ -203,7 +203,7 @@ export default function App() {
 
         const migratedMistakes = migrateMistakeSchedules(
           loaded.jee_mistakes,
-          new Date().toISOString().split('T')[0]
+          getLocalDateString()
         );
         setTasks(loaded.jee_tasks);
         setTests(loaded.jee_tests);
@@ -375,7 +375,7 @@ if (isRemoteUpdate) return;
 
 
   // Today Date string YYYY-MM-DD
-  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const todayStr = useMemo(() => getLocalDateString(), []);
 
   // Each mistake owns its own reminder date. Follow-up dates are calculated
   // from the day that individual mistake is reviewed, not its original log date.
@@ -876,7 +876,7 @@ function AddMistakeModal({ mode, editingMistake, onClose, onSubmit }) {
 
 function AddTaskModal({ initialTask, onClose, onSubmit }) {
   const [title, setTitle] = useState(initialTask ? initialTask.title : '');
-  const [date, setDate] = useState(initialTask ? initialTask.date : new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(initialTask ? initialTask.date : getLocalDateString());
   const [startTime, setStartTime] = useState(initialTask ? initialTask.startTime : '');
   const [endTime, setEndTime] = useState(initialTask ? initialTask.endTime : '');
   const [priority, setPriority] = useState(initialTask ? initialTask.priority : 'High');

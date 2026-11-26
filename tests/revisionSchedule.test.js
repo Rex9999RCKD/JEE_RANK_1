@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   addDays,
+  getLocalDateString,
   scheduleMistakeDecision,
   advanceLongTermReview,
   migrateMistakeSchedules
@@ -56,4 +57,9 @@ test('legacy long-term schedules migrate to an independent next interval', () =>
 
 test('date helper crosses month and year boundaries', () => {
   assert.equal(addDays('2026-12-25', 15), '2027-01-09');
+});
+
+test('local date formatter preserves the local calendar day after midnight', () => {
+  const justAfterMidnight = new Date(2026, 10, 27, 1, 30, 0);
+  assert.equal(getLocalDateString(justAfterMidnight), '2026-11-27');
 });
