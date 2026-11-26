@@ -1,9 +1,17 @@
 // Date-safe spaced revision helpers. All intervals are measured from the
 // date the individual question was actually reviewed, never from its log date.
+// Format a Date using the browser's local calendar date (not UTC).
+export const getLocalDateString = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export const addDays = (dateString, days) => {
   const date = new Date(`${dateString}T12:00:00`);
   date.setDate(date.getDate() + days);
-  return date.toISOString().split('T')[0];
+  return getLocalDateString(date);
 };
 
 export const scheduleMistakeDecision = (mistake, extend3Days, reviewedDate) => {
